@@ -3,10 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <title>Import Lịch Thi</title>
+
 <style>
-body { font-family: Arial; max-width: 800px; margin: auto; }
-textarea { width: 100%; }
-button { padding: 10px 20px; margin-top: 10px; }
+body {
+    font-family: Arial;
+    max-width: 800px;
+    margin: auto;
+}
+
+textarea {
+    width: 100%;
+}
+
+button {
+    padding: 10px 20px;
+    margin-top: 10px;
+}
+
+.card {
+    border: 1px solid #ddd;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: 8px;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.time {
+    color: #555;
+    font-size: 14px;
+    white-space: nowrap;
+}
 </style>
 </head>
 
@@ -14,17 +45,21 @@ button { padding: 10px 20px; margin-top: 10px; }
 
 <h2>📅 Dán lịch thi vào đây</h2>
 
-<textarea id="input" rows="15"></textarea>
+<textarea id="input" rows="12"></textarea>
 
-<button onclick="generateICS()">Tạo file .ics</button>
+<button onclick="handleGenerate()">Tạo file .ics</button>
 
 <p id="status"></p>
 
-<script>
-// ✅ FIX TIMEZONE (không dùng toISOString nữa)
-function formatDate(date) {
-    const pad = n => n.toString().padStart(2, '0');
+<h3>👀 Xem trước</h3>
+<div id="preview"></div>
 
+<script>
+
+// ===== Utils =====
+const pad = n => n.toString().padStart(2, '0');
+
+function formatDate(date) {
     return date.getFullYear() +
            pad(date.getMonth() + 1) +
            pad(date.getDate()) + "T" +
@@ -33,14 +68,41 @@ function formatDate(date) {
            "00";
 }
 
-function generateICS() {
-    const text = document.getElementById("input").value;
-    const lines = text.split("\n").map(l => l.trim()).filter(l => l);
+// ✅ format mới: không lặp ngày
+function formatDisplayRange(start, end) {
+    return `${pad(start.getHours())}:${pad(start.getMinutes())} → ` +
+           `${pad(end.getHours())}:${pad(end.getMinutes())} | ` +
+           `${pad(start.getDate())}/${pad(start.getMonth()+1)}`;
+}
 
-    let events = [];
+// ===== Preview =====
+function renderPreview(events) {
+    const div = document.getElementById("preview");
+    div.innerHTML = "";
+
+    events.sort((a, b) => a.start - b.start);
+
+    events.forEach(e => {
+        div.innerHTML += `
+            <div class="card">
+                <div class="card-header">
+                    <b>${e.summary}</b>
+                    <span class="time">
+                        ${formatDisplayRange(e.start, e.end)}
+                    </span>
+                </div>
+                <div>📍 ${e.location}</div>
+            </div>
+        `;
+    });
+}
+
+// ===== Parse =====
+function parseInput(text) {
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
     const pattern = new RegExp(
-        '^\\s*(\\d{5})\\s+' +
+        '^\\s*(\\d+)\\s+' +   // ✅ sửa ở đây
         '([A-Z]{2,3}\\d{4})\\s*-\\s*' +
         '(.+?)\\s+' +
         '(CC\\d+_[A-Z]_[A-Za-z]+)\\s+' +
@@ -54,27 +116,25 @@ function generateICS() {
         'i'
     );
 
+    let events = [];
+
     lines.forEach(line => {
         const m = line.match(pattern);
         if (!m) return;
 
-        const hoc_ky = m[1];
-        const ma_mon = m[2];
-        const ten_mon = m[3].trim();
-        const nhom = m[4];
-        const ngay = m[5];
-        const loai_thi = m[6] || "CK";
-        const co_so = m[7];
-        const phong = m[8];
-        const thu = m[9];
-        const gio = m[10].replace("g", ":");
-        const duration = parseInt(m[11]);
+        const [
+            _, hoc_ky, ma_mon, ten_mon, nhom,
+            ngay, loai_thi = "CK",
+            co_so, phong, thu, gio_raw, duration
+        ] = m;
+
+        const gio = gio_raw.replace("g", ":");
 
         const start = new Date(`${ngay}T${gio}`);
         const end = new Date(start.getTime() + duration * 60000);
 
         events.push({
-            summary: `${ma_mon} - ${ten_mon} (${loai_thi})`,
+            summary: `${ma_mon} - ${ten_mon.trim()} (${loai_thi})`,
             start,
             end,
             location: `${phong} - ${co_so}`,
@@ -87,12 +147,11 @@ function generateICS() {
         });
     });
 
-    if (events.length === 0) {
-        document.getElementById("status").innerText = "❌ Không parse được dữ liệu";
-        return;
-    }
+    return events;
+}
 
-    // ✅ ICS chuẩn hơn
+// ===== ICS =====
+function generateICS(events) {
     let ics = "BEGIN:VCALENDAR\r\n";
     ics += "VERSION:2.0\r\n";
     ics += "PRODID:-//VietUni Schedule Parser//JS Version//VN\r\n";
@@ -109,15 +168,34 @@ function generateICS() {
 
     ics += "END:VCALENDAR";
 
-    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    return ics;
+}
 
+// ===== Main =====
+function handleGenerate() {
+    const text = document.getElementById("input").value;
+    const events = parseInput(text);
+
+    if (events.length === 0) {
+        document.getElementById("status").innerText = "❌ Không parse được dữ liệu";
+        return;
+    }
+
+    renderPreview(events);
+
+    const ics = generateICS(events);
+
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
     const a = document.createElement("a");
+
     a.href = URL.createObjectURL(blob);
     a.download = "lich_thi.ics";
     a.click();
 
-    document.getElementById("status").innerText = `✅ Tạo ${events.length} sự kiện`;
+    document.getElementById("status").innerText =
+        `✅ Tạo ${events.length} sự kiện`;
 }
+
 </script>
 
 </body>
