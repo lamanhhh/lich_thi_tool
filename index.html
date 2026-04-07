@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Import Lịch Thi</title>
+<style>
+body { font-family: Arial; max-width: 800px; margin: auto; }
+textarea { width: 100%; }
+button { padding: 10px 20px; margin-top: 10px; }
+</style>
+</head>
+
+<body>
+
+<h2>📅 Dán lịch thi vào đây</h2>
+
+<textarea id="input" rows="15"></textarea>
+
+<button onclick="generateICS()">Tạo file .ics</button>
+
+<p id="status"></p>
+
+<script>
+// ✅ FIX TIMEZONE (không dùng toISOString nữa)
+function formatDate(date) {
+    const pad = n => n.toString().padStart(2, '0');
+
+    return date.getFullYear() +
+           pad(date.getMonth() + 1) +
+           pad(date.getDate()) + "T" +
+           pad(date.getHours()) +
+           pad(date.getMinutes()) +
+           "00";
+}
+
+function generateICS() {
+    const text = document.getElementById("input").value;
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l);
+
+    let events = [];
+
+    const pattern = new RegExp(
+        '^\\s*(\\d{5})\\s+' +
+        '([A-Z]{2,3}\\d{4})\\s*-\\s*' +
+        '(.+?)\\s+' +
+        '(CC\\d+_[A-Z]_[A-Za-z]+)\\s+' +
+        '(\\d{4}-\\d{2}-\\d{2})\\s+' +
+        '(CK|GK|TH|BT)?\\s+' +
+        '([A-Z0-9-]+)\\s+' +
+        '([A-Z0-9-]+)\\s+' +
+        '(\\d)\\s+' +
+        '(\\d{1,2}[g:]\\d{2})\\s+' +
+        '(\\d{2,3})',
+        'i'
+    );
+
+    lines.forEach(line => {
+        const m = line.match(pattern);
+        if (!m) return;
+
+        const hoc_ky = m[1];
+        const ma_mon = m[2];
+        const ten_mon = m[3].trim();
+        const nhom = m[4];
+        const ngay = m[5];
+        const loai_thi = m[6] || "CK";
+        const co_so = m[7];
+        const phong = m[8];
+        const thu = m[9];
+        const gio = m[10].replace("g", ":");
+        const duration = parseInt(m[11]);
+
+        const start = new Date(`${ngay}T${gio}`);
+        const end = new Date(start.getTime() + duration * 60000);
+
+        events.push({
+            summary: `${ma_mon} - ${ten_mon} (${loai_thi})`,
+            start,
+            end,
+            location: `${phong} - ${co_so}`,
+            description:
+                `Học kỳ: ${hoc_ky}\\n` +
+                `Nhóm: ${nhom}\\n` +
+                `Cơ sở: ${co_so}\\n` +
+                `Phòng: ${phong}\\n` +
+                `Thứ: ${thu}`
+        });
+    });
+
+    if (events.length === 0) {
+        document.getElementById("status").innerText = "❌ Không parse được dữ liệu";
+        return;
+    }
+
+    // ✅ ICS chuẩn hơn
+    let ics = "BEGIN:VCALENDAR\r\n";
+    ics += "VERSION:2.0\r\n";
+    ics += "PRODID:-//VietUni Schedule Parser//JS Version//VN\r\n";
+
+    events.forEach(e => {
+        ics += "BEGIN:VEVENT\r\n";
+        ics += `SUMMARY:${e.summary}\r\n`;
+        ics += `DTSTART:${formatDate(e.start)}\r\n`;
+        ics += `DTEND:${formatDate(e.end)}\r\n`;
+        ics += `LOCATION:${e.location}\r\n`;
+        ics += `DESCRIPTION:${e.description}\r\n`;
+        ics += "END:VEVENT\r\n";
+    });
+
+    ics += "END:VCALENDAR";
+
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "lich_thi.ics";
+    a.click();
+
+    document.getElementById("status").innerText = `✅ Tạo ${events.length} sự kiện`;
+}
+</script>
+
+</body>
+</html>
