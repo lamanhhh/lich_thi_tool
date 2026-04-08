@@ -151,11 +151,7 @@ function parseInput(text) {
             end,
             location: `${phong} - ${co_so}`,
             description:
-                `Học kỳ: ${hoc_ky}
-Nhóm: ${nhom}
-Cơ sở: ${co_so}
-Phòng: ${phong}
-Thứ: ${thu}`
+                `Học kỳ: ${hoc_ky}\nNhóm: ${nhom}\nCơ sở: ${co_so}\nPhòng: ${phong}\nThứ: ${thu}`
         });
     });
 
@@ -172,7 +168,6 @@ function generateICS(events) {
         ics += "BEGIN:VEVENT\r\n";
         ics += `SUMMARY:${e.summary}\r\n`;
 
-        // xuống dòng thực sự trong ICS
         const desc = e.description.replace(/\r?\n/g, "\\n");
         ics += `DESCRIPTION:${desc}\r\n`;
 
@@ -196,7 +191,7 @@ function handleGenerate() {
         return;
     }
 
-    renderPreview(events);
+    renderPreview(events); // ✅ hiện preview
 
     const ics = generateICS(events);
     const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
@@ -213,7 +208,6 @@ function handleGenerate() {
 // ===== GOOGLE =====
 let tokenClient;
 
-// init
 window.onload = () => {
     gapi.load("client", async () => {
         await gapi.client.init({
@@ -229,7 +223,6 @@ window.onload = () => {
     });
 };
 
-// import
 async function handleImport() {
     const text = document.getElementById("input").value;
     const events = parseInput(text);
@@ -238,6 +231,8 @@ async function handleImport() {
         alert("Không có dữ liệu hợp lệ");
         return;
     }
+
+    renderPreview(events); // ✅ hiện preview trước khi đăng nhập
 
     tokenClient.callback = async (resp) => {
         if (resp.error) return;
@@ -251,7 +246,6 @@ async function handleImport() {
     }
 }
 
-// add events
 async function addEvents(events) {
     const timeZone = "Asia/Ho_Chi_Minh";
 
@@ -259,7 +253,549 @@ async function addEvents(events) {
         const event = {
             summary: e.summary,
             location: e.location,
-            description: e.description, // xuống dòng thật
+            description: e.description,
+            start: { dateTime: e.start.toISOString(), timeZone },
+            end: { dateTime: e.end.toISOString(), timeZone }
+        };
+
+        await gapi.client.calendar.events.insert({
+            calendarId: "primary",
+            resource: event
+        });
+    }
+
+    alert(`✅ Đã import ${events.length} sự kiện`);
+}
+</script>
+
+</body>
+</html><!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Import Lịch Thi</title>
+
+<style>
+body {
+    font-family: Arial;
+    max-width: 800px;
+    margin: auto;
+}
+
+textarea {
+    width: 100%;
+}
+
+button {
+    padding: 10px 20px;
+    margin-top: 10px;
+    margin-right: 5px;
+}
+
+.card {
+    border: 1px solid #ddd;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: 8px;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.time {
+    color: #555;
+    font-size: 14px;
+    white-space: nowrap;
+}
+</style>
+</head>
+
+<body>
+
+<h2>📅 Dán lịch thi vào đây</h2>
+
+<textarea id="input" rows="12"></textarea>
+
+<br>
+<button onclick="handleGenerate()">Tạo file .ics</button>
+<button onclick="handleImport()">Import Google Calendar</button>
+
+<p id="status"></p>
+
+<h3>👀 Xem trước</h3>
+<div id="preview"></div>
+
+<!-- Google API -->
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
+
+<script>
+// ===== CONFIG =====
+const CLIENT_ID = "10855965661-j6l2pn51rvist5lhk2s9t2k2ldeno66n.apps.googleusercontent.com";
+const API_KEY = "AIzaSyAzNYzwcmJZFRiWjet8RKq9DcQgPbHzesM";
+
+const SCOPES = "https://www.googleapis.com/auth/calendar";
+const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
+
+// ===== Utils =====
+const pad = n => n.toString().padStart(2, '0');
+
+function formatDate(date) {
+    return date.getFullYear() +
+           pad(date.getMonth() + 1) +
+           pad(date.getDate()) + "T" +
+           pad(date.getHours()) +
+           pad(date.getMinutes()) +
+           "00";
+}
+
+function formatDisplayRange(start, end) {
+    return `${pad(start.getHours())}:${pad(start.getMinutes())} - ` +
+           `${pad(end.getHours())}:${pad(end.getMinutes())} | ` +
+           `${pad(start.getDate())}/${pad(start.getMonth()+1)}`;
+}
+
+// ===== Preview =====
+function renderPreview(events) {
+    const div = document.getElementById("preview");
+    div.innerHTML = "";
+
+    events.sort((a, b) => a.start - b.start);
+
+    events.forEach(e => {
+        div.innerHTML += `
+            <div class="card">
+                <div class="card-header">
+                    <b>${e.summary}</b>
+                    <span class="time">
+                        ${formatDisplayRange(e.start, e.end)}
+                    </span>
+                </div>
+                <div>📍 ${e.location}</div>
+            </div>
+        `;
+    });
+}
+
+// ===== Parse =====
+function parseInput(text) {
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+
+    const pattern = new RegExp(
+        '^\\s*(\\d+)\\s+' +
+        '([A-Z]{2,3}\\d{4})\\s*-\\s*' +
+        '(.+?)\\s+' +
+        '(CC\\d+_[A-Z]_[A-Za-z]+)\\s+' +
+        '(\\d{4}-\\d{2}-\\d{2})\\s+' +
+        '(CK|GK|TH|BT)?\\s+' +
+        '([A-Z0-9-]+)\\s+' +
+        '([A-Z0-9-]+)\\s+' +
+        '(\\d)\\s+' +
+        '(\\d{1,2}[g:]\\d{2})\\s+' +
+        '(\\d{2,3})',
+        'i'
+    );
+
+    let events = [];
+
+    lines.forEach(line => {
+        const m = line.match(pattern);
+        if (!m) return;
+
+        const [
+            _, hoc_ky, ma_mon, ten_mon, nhom,
+            ngay, loai_thi = "CK",
+            co_so, phong, thu, gio_raw, duration
+        ] = m;
+
+        const gio = gio_raw.replace("g", ":");
+
+        const start = new Date(`${ngay}T${gio}`);
+        const end = new Date(start.getTime() + duration * 60000);
+
+        events.push({
+            summary: `${ma_mon} - ${ten_mon.trim()} (${loai_thi})`,
+            start,
+            end,
+            location: `${phong} - ${co_so}`,
+            description:
+                `Học kỳ: ${hoc_ky}\nNhóm: ${nhom}\nCơ sở: ${co_so}\nPhòng: ${phong}\nThứ: ${thu}`
+        });
+    });
+
+    return events;
+}
+
+// ===== ICS =====
+function generateICS(events) {
+    let ics = "BEGIN:VCALENDAR\r\n";
+    ics += "VERSION:2.0\r\n";
+    ics += "PRODID:-//Schedule Parser//VN\r\n";
+
+    events.forEach(e => {
+        ics += "BEGIN:VEVENT\r\n";
+        ics += `SUMMARY:${e.summary}\r\n`;
+
+        const desc = e.description.replace(/\r?\n/g, "\\n");
+        ics += `DESCRIPTION:${desc}\r\n`;
+
+        ics += `DTSTART:${formatDate(e.start)}\r\n`;
+        ics += `DTEND:${formatDate(e.end)}\r\n`;
+        ics += `LOCATION:${e.location}\r\n`;
+        ics += "END:VEVENT\r\n";
+    });
+
+    ics += "END:VCALENDAR";
+    return ics;
+}
+
+// ===== Download =====
+function handleGenerate() {
+    const text = document.getElementById("input").value;
+    const events = parseInput(text);
+
+    if (events.length === 0) {
+        document.getElementById("status").innerText = "❌ Không parse được dữ liệu";
+        return;
+    }
+
+    renderPreview(events); // ✅ hiện preview
+
+    const ics = generateICS(events);
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "lich_thi.ics";
+    a.click();
+
+    document.getElementById("status").innerText =
+        `✅ Tạo ${events.length} sự kiện`;
+}
+
+// ===== GOOGLE =====
+let tokenClient;
+
+window.onload = () => {
+    gapi.load("client", async () => {
+        await gapi.client.init({
+            apiKey: API_KEY,
+            discoveryDocs: [DISCOVERY_DOC],
+        });
+    });
+
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: "",
+    });
+};
+
+async function handleImport() {
+    const text = document.getElementById("input").value;
+    const events = parseInput(text);
+
+    if (events.length === 0) {
+        alert("Không có dữ liệu hợp lệ");
+        return;
+    }
+
+    renderPreview(events); // ✅ hiện preview trước khi đăng nhập
+
+    tokenClient.callback = async (resp) => {
+        if (resp.error) return;
+        await addEvents(events);
+    };
+
+    if (!gapi.client.getToken()) {
+        tokenClient.requestAccessToken({ prompt: "consent" });
+    } else {
+        await addEvents(events);
+    }
+}
+
+async function addEvents(events) {
+    const timeZone = "Asia/Ho_Chi_Minh";
+
+    for (const e of events) {
+        const event = {
+            summary: e.summary,
+            location: e.location,
+            description: e.description,
+            start: { dateTime: e.start.toISOString(), timeZone },
+            end: { dateTime: e.end.toISOString(), timeZone }
+        };
+
+        await gapi.client.calendar.events.insert({
+            calendarId: "primary",
+            resource: event
+        });
+    }
+
+    alert(`✅ Đã import ${events.length} sự kiện`);
+}
+</script>
+
+</body>
+</html><!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Import Lịch Thi</title>
+
+<style>
+body {
+    font-family: Arial;
+    max-width: 800px;
+    margin: auto;
+}
+
+textarea {
+    width: 100%;
+}
+
+button {
+    padding: 10px 20px;
+    margin-top: 10px;
+    margin-right: 5px;
+}
+
+.card {
+    border: 1px solid #ddd;
+    padding: 12px;
+    margin-top: 10px;
+    border-radius: 8px;
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.time {
+    color: #555;
+    font-size: 14px;
+    white-space: nowrap;
+}
+</style>
+</head>
+
+<body>
+
+<h2>📅 Dán lịch thi vào đây</h2>
+
+<textarea id="input" rows="12"></textarea>
+
+<br>
+<button onclick="handleGenerate()">Tạo file .ics</button>
+<button onclick="handleImport()">Import Google Calendar</button>
+
+<p id="status"></p>
+
+<h3>👀 Xem trước</h3>
+<div id="preview"></div>
+
+<!-- Google API -->
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
+
+<script>
+// ===== CONFIG =====
+const CLIENT_ID = "10855965661-j6l2pn51rvist5lhk2s9t2k2ldeno66n.apps.googleusercontent.com";
+const API_KEY = "AIzaSyAzNYzwcmJZFRiWjet8RKq9DcQgPbHzesM";
+
+const SCOPES = "https://www.googleapis.com/auth/calendar";
+const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
+
+// ===== Utils =====
+const pad = n => n.toString().padStart(2, '0');
+
+function formatDate(date) {
+    return date.getFullYear() +
+           pad(date.getMonth() + 1) +
+           pad(date.getDate()) + "T" +
+           pad(date.getHours()) +
+           pad(date.getMinutes()) +
+           "00";
+}
+
+function formatDisplayRange(start, end) {
+    return `${pad(start.getHours())}:${pad(start.getMinutes())} - ` +
+           `${pad(end.getHours())}:${pad(end.getMinutes())} | ` +
+           `${pad(start.getDate())}/${pad(start.getMonth()+1)}`;
+}
+
+// ===== Preview =====
+function renderPreview(events) {
+    const div = document.getElementById("preview");
+    div.innerHTML = "";
+
+    events.sort((a, b) => a.start - b.start);
+
+    events.forEach(e => {
+        div.innerHTML += `
+            <div class="card">
+                <div class="card-header">
+                    <b>${e.summary}</b>
+                    <span class="time">
+                        ${formatDisplayRange(e.start, e.end)}
+                    </span>
+                </div>
+                <div>📍 ${e.location}</div>
+            </div>
+        `;
+    });
+}
+
+// ===== Parse =====
+function parseInput(text) {
+    const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+
+    const pattern = new RegExp(
+        '^\\s*(\\d+)\\s+' +
+        '([A-Z]{2,3}\\d{4})\\s*-\\s*' +
+        '(.+?)\\s+' +
+        '(CC\\d+_[A-Z]_[A-Za-z]+)\\s+' +
+        '(\\d{4}-\\d{2}-\\d{2})\\s+' +
+        '(CK|GK|TH|BT)?\\s+' +
+        '([A-Z0-9-]+)\\s+' +
+        '([A-Z0-9-]+)\\s+' +
+        '(\\d)\\s+' +
+        '(\\d{1,2}[g:]\\d{2})\\s+' +
+        '(\\d{2,3})',
+        'i'
+    );
+
+    let events = [];
+
+    lines.forEach(line => {
+        const m = line.match(pattern);
+        if (!m) return;
+
+        const [
+            _, hoc_ky, ma_mon, ten_mon, nhom,
+            ngay, loai_thi = "CK",
+            co_so, phong, thu, gio_raw, duration
+        ] = m;
+
+        const gio = gio_raw.replace("g", ":");
+
+        const start = new Date(`${ngay}T${gio}`);
+        const end = new Date(start.getTime() + duration * 60000);
+
+        events.push({
+            summary: `${ma_mon} - ${ten_mon.trim()} (${loai_thi})`,
+            start,
+            end,
+            location: `${phong} - ${co_so}`,
+            description:
+                `Học kỳ: ${hoc_ky}\nNhóm: ${nhom}\nCơ sở: ${co_so}\nPhòng: ${phong}\nThứ: ${thu}`
+        });
+    });
+
+    return events;
+}
+
+// ===== ICS =====
+function generateICS(events) {
+    let ics = "BEGIN:VCALENDAR\r\n";
+    ics += "VERSION:2.0\r\n";
+    ics += "PRODID:-//Schedule Parser//VN\r\n";
+
+    events.forEach(e => {
+        ics += "BEGIN:VEVENT\r\n";
+        ics += `SUMMARY:${e.summary}\r\n`;
+
+        const desc = e.description.replace(/\r?\n/g, "\\n");
+        ics += `DESCRIPTION:${desc}\r\n`;
+
+        ics += `DTSTART:${formatDate(e.start)}\r\n`;
+        ics += `DTEND:${formatDate(e.end)}\r\n`;
+        ics += `LOCATION:${e.location}\r\n`;
+        ics += "END:VEVENT\r\n";
+    });
+
+    ics += "END:VCALENDAR";
+    return ics;
+}
+
+// ===== Download =====
+function handleGenerate() {
+    const text = document.getElementById("input").value;
+    const events = parseInput(text);
+
+    if (events.length === 0) {
+        document.getElementById("status").innerText = "❌ Không parse được dữ liệu";
+        return;
+    }
+
+    renderPreview(events); // ✅ hiện preview
+
+    const ics = generateICS(events);
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "lich_thi.ics";
+    a.click();
+
+    document.getElementById("status").innerText =
+        `✅ Tạo ${events.length} sự kiện`;
+}
+
+// ===== GOOGLE =====
+let tokenClient;
+
+window.onload = () => {
+    gapi.load("client", async () => {
+        await gapi.client.init({
+            apiKey: API_KEY,
+            discoveryDocs: [DISCOVERY_DOC],
+        });
+    });
+
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: "",
+    });
+};
+
+async function handleImport() {
+    const text = document.getElementById("input").value;
+    const events = parseInput(text);
+
+    if (events.length === 0) {
+        alert("Không có dữ liệu hợp lệ");
+        return;
+    }
+
+    renderPreview(events); // ✅ hiện preview trước khi đăng nhập
+
+    tokenClient.callback = async (resp) => {
+        if (resp.error) return;
+        await addEvents(events);
+    };
+
+    if (!gapi.client.getToken()) {
+        tokenClient.requestAccessToken({ prompt: "consent" });
+    } else {
+        await addEvents(events);
+    }
+}
+
+async function addEvents(events) {
+    const timeZone = "Asia/Ho_Chi_Minh";
+
+    for (const e of events) {
+        const event = {
+            summary: e.summary,
+            location: e.location,
+            description: e.description,
             start: { dateTime: e.start.toISOString(), timeZone },
             end: { dateTime: e.end.toISOString(), timeZone }
         };
