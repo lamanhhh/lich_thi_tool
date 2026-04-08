@@ -18,6 +18,7 @@ textarea {
 button {
     padding: 10px 20px;
     margin-top: 10px;
+    margin-right: 5px;
 }
 
 .card {
@@ -47,14 +48,26 @@ button {
 
 <textarea id="input" rows="12"></textarea>
 
+<br>
 <button onclick="handleGenerate()">Tạo file .ics</button>
+<button onclick="handleImport()">Import Google Calendar</button>
 
 <p id="status"></p>
 
 <h3>👀 Xem trước</h3>
 <div id="preview"></div>
 
+<!-- Google API -->
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
+
 <script>
+// ===== CONFIG =====
+const CLIENT_ID = "10855965661-j6l2pn51rvist5lhk2s9t2k2ldeno66n.apps.googleusercontent.com";
+const API_KEY = "AIzaSyAzNYzwcmJZFRiWjet8RKq9DcQgPbHzesM";
+
+const SCOPES = "https://www.googleapis.com/auth/calendar";
+const DISCOVERY_DOC = "https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest";
 
 // ===== Utils =====
 const pad = n => n.toString().padStart(2, '0');
@@ -68,9 +81,8 @@ function formatDate(date) {
            "00";
 }
 
-// ✅ format mới: không lặp ngày
 function formatDisplayRange(start, end) {
-    return `${pad(start.getHours())}:${pad(start.getMinutes())} → ` +
+    return `${pad(start.getHours())}:${pad(start.getMinutes())} - ` +
            `${pad(end.getHours())}:${pad(end.getMinutes())} | ` +
            `${pad(start.getDate())}/${pad(start.getMonth()+1)}`;
 }
@@ -102,7 +114,7 @@ function parseInput(text) {
     const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
     const pattern = new RegExp(
-        '^\\s*(\\d+)\\s+' +   // ✅ sửa ở đây
+        '^\\s*(\\d+)\\s+' +
         '([A-Z]{2,3}\\d{4})\\s*-\\s*' +
         '(.+?)\\s+' +
         '(CC\\d+_[A-Z]_[A-Za-z]+)\\s+' +
@@ -154,7 +166,7 @@ function parseInput(text) {
 function generateICS(events) {
     let ics = "BEGIN:VCALENDAR\r\n";
     ics += "VERSION:2.0\r\n";
-    ics += "PRODID:-//VietUni Schedule Parser//JS Version//VN\r\n";
+    ics += "PRODID:-//Schedule Parser//VN\r\n";
 
     events.forEach(e => {
         ics += "BEGIN:VEVENT\r\n";
@@ -167,11 +179,10 @@ function generateICS(events) {
     });
 
     ics += "END:VCALENDAR";
-
     return ics;
 }
 
-// ===== Main =====
+// ===== Download =====
 function handleGenerate() {
     const text = document.getElementById("input").value;
     const events = parseInput(text);
@@ -184,10 +195,9 @@ function handleGenerate() {
     renderPreview(events);
 
     const ics = generateICS(events);
-
     const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-    const a = document.createElement("a");
 
+    const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "lich_thi.ics";
     a.click();
@@ -196,6 +206,68 @@ function handleGenerate() {
         `✅ Tạo ${events.length} sự kiện`;
 }
 
+// ===== GOOGLE =====
+let tokenClient;
+
+// init
+window.onload = () => {
+    gapi.load("client", async () => {
+        await gapi.client.init({
+            apiKey: API_KEY,
+            discoveryDocs: [DISCOVERY_DOC],
+        });
+    });
+
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        callback: "",
+    });
+};
+
+// import
+async function handleImport() {
+    const text = document.getElementById("input").value;
+    const events = parseInput(text);
+
+    if (events.length === 0) {
+        alert("Không có dữ liệu hợp lệ");
+        return;
+    }
+
+    tokenClient.callback = async (resp) => {
+        if (resp.error) return;
+        await addEvents(events);
+    };
+
+    if (!gapi.client.getToken()) {
+        tokenClient.requestAccessToken({ prompt: "consent" });
+    } else {
+        await addEvents(events);
+    }
+}
+
+// add events
+async function addEvents(events) {
+    const timeZone = "Asia/Ho_Chi_Minh";
+
+    for (const e of events) {
+        const event = {
+            summary: e.summary,
+            location: e.location,
+            description: e.description,
+            start: { dateTime: e.start.toISOString(), timeZone },
+            end: { dateTime: e.end.toISOString(), timeZone }
+        };
+
+        await gapi.client.calendar.events.insert({
+            calendarId: "primary",
+            resource: event
+        });
+    }
+
+    alert(`✅ Đã import ${events.length} sự kiện`);
+}
 </script>
 
 </body>
