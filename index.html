@@ -147,6 +147,7 @@ function parseInput(text) {
 
         events.push({
             summary: `${ma_mon} - ${ten_mon.trim()} (${loai_thi})`,
+            hoc_ky,
             start,
             end,
             location: `${phong} - ${co_so}`,
@@ -246,8 +247,21 @@ async function handleImport() {
     }
 }
 
+async function getOrCreateCalendar(name) {
+    const list = await gapi.client.calendar.calendarList.list();
+    const existing = list.result.items.find(c => c.summary === name);
+    if (existing) return existing.id;
+
+    const created = await gapi.client.calendar.calendars.insert({
+        resource: { summary: name }
+    });
+    return created.result.id;
+}
+
 async function addEvents(events) {
     const timeZone = "Asia/Ho_Chi_Minh";
+    const hoc_ky = events[0]?.hoc_ky || "HK";
+    const calendarId = await getOrCreateCalendar(`${hoc_ky} thi`);
 
     for (const e of events) {
         const event = {
@@ -259,12 +273,12 @@ async function addEvents(events) {
         };
 
         await gapi.client.calendar.events.insert({
-            calendarId: "primary",
+            calendarId,
             resource: event
         });
     }
 
-    alert(`✅ Đã import ${events.length} sự kiện`);
+    alert(`✅ Đã import ${events.length} sự kiện vào lịch "${hoc_ky} thi"`);
 }
 </script>
 
