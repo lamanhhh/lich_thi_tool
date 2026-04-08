@@ -261,7 +261,7 @@ async function getOrCreateCalendar(name) {
 async function addEvents(events) {
     const timeZone = "Asia/Ho_Chi_Minh";
     const hoc_ky = events[0]?.hoc_ky || "HK";
-    const calendarId = await getOrCreateCalendar(`${hoc_ky} thi`);
+    const calendarId = await getOrCreateCalendar(`[${hoc_ky}] thi`);
 
     for (const e of events) {
         const event = {
