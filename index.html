@@ -151,11 +151,11 @@ function parseInput(text) {
             end,
             location: `${phong} - ${co_so}`,
             description:
-                `Học kỳ: ${hoc_ky}\\n` +
-                `Nhóm: ${nhom}\\n` +
-                `Cơ sở: ${co_so}\\n` +
-                `Phòng: ${phong}\\n` +
-                `Thứ: ${thu}`
+                `Học kỳ: ${hoc_ky}
+Nhóm: ${nhom}
+Cơ sở: ${co_so}
+Phòng: ${phong}
+Thứ: ${thu}`
         });
     });
 
@@ -171,10 +171,14 @@ function generateICS(events) {
     events.forEach(e => {
         ics += "BEGIN:VEVENT\r\n";
         ics += `SUMMARY:${e.summary}\r\n`;
+
+        // xuống dòng thực sự trong ICS
+        const desc = e.description.replace(/\r?\n/g, "\\n");
+        ics += `DESCRIPTION:${desc}\r\n`;
+
         ics += `DTSTART:${formatDate(e.start)}\r\n`;
         ics += `DTEND:${formatDate(e.end)}\r\n`;
         ics += `LOCATION:${e.location}\r\n`;
-        ics += `DESCRIPTION:${e.description}\r\n`;
         ics += "END:VEVENT\r\n";
     });
 
@@ -255,7 +259,7 @@ async function addEvents(events) {
         const event = {
             summary: e.summary,
             location: e.location,
-            description: e.description,
+            description: e.description, // xuống dòng thật
             start: { dateTime: e.start.toISOString(), timeZone },
             end: { dateTime: e.end.toISOString(), timeZone }
         };
